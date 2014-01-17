@@ -145,6 +145,43 @@ Fetcher.prototype._retrieve = function(fetchSpecs, options, callback) {
   async.parallel(batchedRequests, callback);
 };
 
+Fetcher.prototype._retrieveFromStore = function(fetchSpecs, options, callback) {
+  var batchedRequests = {};
+
+  _.each(fetchSpecs, function(spec, name) {
+    batchedRequests[name] = function(cb) {
+      var collectionData, idAttribute, model, modelData, modelOptions;
+
+      modelData = null;
+      modelOptions = {};
+
+      // First, see if we have stored the model or collection.
+      if (spec.model != null) {
+      
+        this._retrieveModel(spec, function(err, modelData) {
+          this._retrieveModelDataFromStore(spec, modelData, modelOptions, cb);
+        }.bind(this));
+        
+      } else if (spec.collection != null) {
+      
+        this.collectionStore.get(spec.collection, spec.params, function(collectionData) {
+          if (collectionData) {
+            modelData = this.retrieveModelsForCollectionName(spec.collection, collectionData.ids);
+            modelOptions = {
+              meta: collectionData.meta,
+              params: collectionData.params
+            };
+          }
+          this._retrieveModelDataFromStore(spec, modelData, modelOptions, cb);
+        }.bind(this));
+
+      }
+
+    }.bind(this);
+  }, this);
+  async.parallel(batchedRequests, callback);
+};
+
 Fetcher.prototype._retrieveModelData = function(spec, modelData, modelOptions, cb) {
 
   // If we found the model/collection in the store, then return that.
@@ -168,6 +205,27 @@ Fetcher.prototype._retrieveModelData = function(spec, modelData, modelOptions, c
     this.fetchFromApi(spec, cb);
   }
 }
+
+Fetcher.prototype._retrieveModelDataFromStore = function(spec, modelData, modelOptions, cb) {
+  // If we found the model/collection in the store, then return that.
+  if (!this.needsFetch(modelData, spec)) {
+    model = this.getModelOrCollectionForSpec(spec, modelData, modelOptions);
+
+    /**
+     * If 'checkFresh' is set (and we're in the client), then before we
+     * return the cached object we fire off a fetch, compare the results,
+     * and if the data is different, we trigger a 'refresh' event.
+     */
+    if (spec.checkFresh && !isServer && this.shouldCheckFresh(spec)) {
+      model.checkFresh();
+      this.didCheckFresh(spec);
+    }
+    cb(null, model);
+  } else {
+    cb('Not found in store', {});
+  }
+};
+
 
 Fetcher.prototype._retrieveModel = function(spec, callback) {
   var fetcher = this;
@@ -389,6 +447,30 @@ Fetcher.prototype.fetch = function(fetchSpecs, options, callback) {
     if (options.writeToCache) {
       fetcher.storeResults(results);
     }
+    callback(null, results);
+  });
+};
+
+Fetcher.prototype.fetchFromStore = function(fetchSpecs, options, callback) {
+  var _this = this;
+
+  /**
+   * Support both (fetchSpecs, options, callback)
+   * and (fetchSpecs, callback).
+   */
+  if (arguments.length === 2) {
+    callback = options;
+    options = {};
+  } else {
+    options = options || {};
+  }
+
+  this.pendingFetches++;
+  this.trigger('fetch:start', fetchSpecs);
+  this._retrieveFromStore(fetchSpecs, options, function(err, results) {
+    _this.pendingFetches--;
+    _this.trigger('fetch:end', fetchSpecs, err, results);
+    if (err) return callback(err);
     callback(null, results);
   });
 };
