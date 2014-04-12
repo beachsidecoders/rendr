@@ -30,10 +30,8 @@ function apiProxy(dataAdapter) {
       var type;
       if (err) return next(err);
       
-      try {
+      if (response.headers) {
         type = response.headers['content-type'];
-      } catch (e) {
-        // Regular json
       }
 
       if (type && type != 'application/json') {
