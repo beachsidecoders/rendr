@@ -29,9 +29,17 @@ function apiProxy(dataAdapter) {
     }, function(err, response, body) {
       if (err) return next(err);
 
-      // Pass through statusCode.
-      res.status(response.statusCode);
-      res.json(body);
+      var type = response.headers['content-type'];
+
+      if (type && type != 'application/json') {
+        res.charset = null;
+        res.type(type);
+        res.send(response.statusCode, body);
+      } else {
+        res.status(response.statusCode);
+        res.json(body);
+      }
+
     });
   };
 };
