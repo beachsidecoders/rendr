@@ -27,9 +27,12 @@ function apiProxy(dataAdapter) {
     dataAdapter.request(req, api, {
       convertErrorCode: false
     }, function(err, response, body) {
+      var type;
       if (err) return next(err);
-
-      var type = response.headers['content-type'];
+      
+      if (response.headers) {
+        type = response.headers['content-type'];
+      }
 
       if (type && type != 'application/json') {
         res.charset = null;
